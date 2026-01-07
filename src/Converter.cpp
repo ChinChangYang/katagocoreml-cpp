@@ -1,5 +1,5 @@
 // katagocoreml - Standalone C++ KataGo to Core ML Converter
-// Copyright (c) 2025
+// Copyright (c) 2025, Chin-Chang Yang
 
 #include "katagocoreml/KataGoConverter.hpp"
 #include "parser/KataGoParser.hpp"
