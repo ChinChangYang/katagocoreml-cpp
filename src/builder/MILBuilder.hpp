@@ -20,7 +20,9 @@ public:
                int board_x_size,
                int board_y_size,
                bool optimize_identity_mask,
-               bool use_fp16 = false);
+               bool use_fp16 = false,
+               int min_batch_size = 1,
+               int max_batch_size = 1);
 
     /// Build and return the MIL program protobuf
     /// @return Unique pointer to MIL Program protobuf
@@ -39,8 +41,32 @@ private:
     int m_board_y_size;
     bool m_optimize_identity_mask;
     bool m_use_fp16;
+    int m_min_batch_size;
+    int m_max_batch_size;
     CoreML::Specification::MILSpec::DataType m_weight_dtype;
     KataGoOps m_ops;
+
+    // Batch size helpers
+    bool isDynamicBatch() const {
+        return m_min_batch_size != m_max_batch_size || m_max_batch_size <= 0;
+    }
+    void setBatchDimension(CoreML::Specification::MILSpec::TensorType* tensor_type);
+
+    // Tensor output helpers with batch dimension support
+    void setTensorOutput4D(CoreML::Specification::MILSpec::Operation* op,
+                           const std::string& name,
+                           int channels, int height, int width);
+    void setTensorOutput2D(CoreML::Specification::MILSpec::Operation* op,
+                           const std::string& name,
+                           int channels);
+    void setTensorOutputPooled4D(CoreML::Specification::MILSpec::Operation* op,
+                                  const std::string& name,
+                                  int channels);
+    void setTensorOutputMask4D(CoreML::Specification::MILSpec::Operation* op,
+                                const std::string& name);
+    void setTensorOutputMaskSpatial4D(CoreML::Specification::MILSpec::Operation* op,
+                                       const std::string& name,
+                                       int height, int width);
 
     // Operation name counter for unique names
     int m_var_counter = 0;

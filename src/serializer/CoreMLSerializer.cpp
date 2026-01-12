@@ -55,44 +55,68 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     // Set description
     auto* desc = model->mutable_description();
 
+    // Helper lambda to set up batch dimension (either fixed shape or shape range)
+    auto setBatchShape = [&options](CoreML::Specification::ArrayFeatureType* array_type,
+                                     std::vector<int64_t> other_dims) {
+        if (options.isDynamicBatch()) {
+            // Use ShapeRange for dynamic batch
+            auto* shape_range = array_type->mutable_shaperange();
+
+            // Batch dimension range
+            auto* batch_range = shape_range->add_sizeranges();
+            batch_range->set_lowerbound(options.min_batch_size);
+            batch_range->set_upperbound(options.max_batch_size);
+
+            // Other dimensions are fixed
+            for (int64_t dim : other_dims) {
+                auto* range = shape_range->add_sizeranges();
+                range->set_lowerbound(dim);
+                range->set_upperbound(dim);
+            }
+
+            // Also set default shape for batch=min_batch_size
+            array_type->add_shape(options.min_batch_size);
+            for (int64_t dim : other_dims) {
+                array_type->add_shape(dim);
+            }
+        } else {
+            // Fixed batch size
+            array_type->add_shape(options.min_batch_size);
+            for (int64_t dim : other_dims) {
+                array_type->add_shape(dim);
+            }
+        }
+    };
+
     // Add input descriptions
-    // spatial_input
+    // spatial_input: [batch, 22, board_y, board_x]
     auto* spatial_input = desc->add_input();
     spatial_input->set_name("spatial_input");
     auto* spatial_type = spatial_input->mutable_type()->mutable_multiarraytype();
     spatial_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
-    spatial_type->add_shape(1);
-    // Note: num_input_channels would need to be passed in
-    spatial_type->add_shape(22);  // Default KataGo input channels
-    spatial_type->add_shape(options.board_y_size);
-    spatial_type->add_shape(options.board_x_size);
+    setBatchShape(spatial_type, {22, options.board_y_size, options.board_x_size});
 
-    // global_input
+    // global_input: [batch, 19]
     auto* global_input = desc->add_input();
     global_input->set_name("global_input");
     auto* global_type = global_input->mutable_type()->mutable_multiarraytype();
     global_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
-    global_type->add_shape(1);
-    global_type->add_shape(19);  // Default KataGo global channels
+    setBatchShape(global_type, {19});
 
-    // input_mask
+    // input_mask: [batch, 1, board_y, board_x]
     auto* mask_input = desc->add_input();
     mask_input->set_name("input_mask");
     auto* mask_type = mask_input->mutable_type()->mutable_multiarraytype();
     mask_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
-    mask_type->add_shape(1);
-    mask_type->add_shape(1);
-    mask_type->add_shape(options.board_y_size);
-    mask_type->add_shape(options.board_x_size);
+    setBatchShape(mask_type, {1, options.board_y_size, options.board_x_size});
 
-    // meta_input (optional, for human SL networks with metadata encoder)
+    // meta_input (optional, for human SL networks with metadata encoder): [batch, num_meta_channels]
     if (options.meta_encoder_version > 0 && options.num_input_meta_channels > 0) {
         auto* meta_input = desc->add_input();
         meta_input->set_name("meta_input");
         auto* meta_type = meta_input->mutable_type()->mutable_multiarraytype();
         meta_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
-        meta_type->add_shape(1);
-        meta_type->add_shape(options.num_input_meta_channels);
+        setBatchShape(meta_type, {options.num_input_meta_channels});
     }
 
     // Add output descriptions (names match Python coremltools converter)

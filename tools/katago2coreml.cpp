@@ -18,6 +18,7 @@ void printUsage(const char* program) {
               << "  -y, --board-y <size>     Board height (default: 19)\n"
               << "  --optimize-identity-mask Optimize for full board (skip mask ops)\n"
               << "  --float16                Use FLOAT16 compute precision\n"
+              << "  --dynamic-batch <min,max> Enable dynamic batch (e.g. 1,8 or 1,-1 for unlimited)\n"
               << "  --info                   Show model info and exit\n"
               << "  -v, --verbose            Enable verbose output\n"
               << "  -h, --help               Show this help\n"
@@ -26,6 +27,7 @@ void printUsage(const char* program) {
               << "  " << program << " kata1-b40c256.bin.gz KataGo.mlpackage\n"
               << "  " << program << " -x 9 -y 9 model.bin.gz KataGo-9x9.mlpackage\n"
               << "  " << program << " --optimize-identity-mask model.bin.gz KataGo-opt.mlpackage\n"
+              << "  " << program << " --dynamic-batch 1,8 model.bin.gz KataGo-batch.mlpackage\n"
               << "  " << program << " --info model.bin.gz\n"
               << "\n"
               << "Supported KataGo model versions: 8-16\n"
@@ -85,6 +87,19 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             options.board_y_size = std::stoi(argv[++i]);
+        } else if (arg == "--dynamic-batch") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --dynamic-batch requires min,max (e.g. 1,8)\n";
+                return 1;
+            }
+            std::string batch_arg = argv[++i];
+            auto comma = batch_arg.find(',');
+            if (comma == std::string::npos) {
+                std::cerr << "Error: --dynamic-batch format: min,max (e.g. 1,8 or 1,-1)\n";
+                return 1;
+            }
+            options.min_batch_size = std::stoi(batch_arg.substr(0, comma));
+            options.max_batch_size = std::stoi(batch_arg.substr(comma + 1));
         } else if (arg[0] == '-') {
             std::cerr << "Error: Unknown option: " << arg << "\n";
             return 1;
@@ -122,7 +137,9 @@ int main(int argc, char* argv[]) {
             std::cout << "Converting " << input_path << " to " << output_path << "\n"
                       << "  Board size: " << options.board_x_size << "x" << options.board_y_size << "\n"
                       << "  Optimize identity mask: " << (options.optimize_identity_mask ? "yes" : "no") << "\n"
-                      << "  Compute precision: " << options.compute_precision << "\n";
+                      << "  Compute precision: " << options.compute_precision << "\n"
+                      << "  Batch size: " << options.min_batch_size
+                      << (options.isDynamicBatch() ? "-" + std::to_string(options.max_batch_size) : "") << "\n";
         }
 
         // First get model info
