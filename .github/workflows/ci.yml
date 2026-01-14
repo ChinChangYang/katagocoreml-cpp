@@ -41,9 +41,7 @@ jobs:
         run: |
           ./build/katago2coreml \
             tests/models/g170-b6c96-s175395328-d26788732.bin.gz \
-            /tmp/test-output.mlpackage \
-            --batch-size 1 \
-            --precision float32
+            /tmp/test-output.mlpackage
 
       - name: Verify output package structure
         run: |
