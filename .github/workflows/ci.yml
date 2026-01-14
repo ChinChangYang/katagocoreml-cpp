@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install cmake protobuf abseil zlib
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKATAGOCOREML_BUILD_TESTS=ON \
+            -DKATAGOCOREML_BUILD_TOOLS=ON
+
+      - name: Build project
+        run: |
+          cmake --build build --config Release -j $(sysctl -n hw.ncpu)
+
+      - name: Run C++ unit tests
+        run: |
+          cd build
+          ctest --output-on-failure --verbose
+
+      - name: Test CLI tool with real model
+        run: |
+          ./build/katago2coreml \
+            tests/models/g170-b6c96-s175395328-d26788732.bin.gz \
+            /tmp/test-output.mlpackage \
+            --batch-size 1 \
+            --precision float32
+
+      - name: Verify output package structure
+        run: |
+          echo "Verifying .mlpackage structure..."
+          test -d /tmp/test-output.mlpackage || { echo "Error: .mlpackage directory not found"; exit 1; }
+          test -d /tmp/test-output.mlpackage/Data || { echo "Error: Data/ subdirectory not found"; exit 1; }
+          test -f /tmp/test-output.mlpackage/Manifest.json || { echo "Error: Manifest.json not found"; exit 1; }
+          test -d /tmp/test-output.mlpackage/Data/com.apple.CoreML/weights || { echo "Error: weights/ subdirectory not found"; exit 1; }
+          echo "✅ Package structure validated successfully"
+          ls -lah /tmp/test-output.mlpackage/
+          ls -lah /tmp/test-output.mlpackage/Data/
+
+      - name: Install library
+        run: |
+          cmake --install build --prefix /tmp/katagocoreml-install
+
+      - name: Verify installation
+        run: |
+          echo "Verifying installed files..."
+          test -f /tmp/katagocoreml-install/lib/libkatagocoreml.a || { echo "Error: Static library not found"; exit 1; }
+          test -d /tmp/katagocoreml-install/include/katagocoreml || { echo "Error: Headers not found"; exit 1; }
+          test -f /tmp/katagocoreml-install/bin/katago2coreml || { echo "Error: CLI tool not found"; exit 1; }
+          test -f /tmp/katagocoreml-install/lib/pkgconfig/katagocoreml.pc || { echo "Error: pkg-config file not found"; exit 1; }
+          echo "✅ Installation verified successfully"
+          ls -lah /tmp/katagocoreml-install/lib/
+          ls -lah /tmp/katagocoreml-install/bin/
+          ls -lah /tmp/katagocoreml-install/include/
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katagocoreml-macos-build
+          path: |
+            build/katago2coreml
+            /tmp/test-output.mlpackage
+          retention-days: 7
