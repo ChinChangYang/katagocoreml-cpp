@@ -64,6 +64,30 @@ Supports versions 8-16. Key differences:
 
 ## Testing
 
+### C++ Unit Tests
+
 Tests use Google Test (fetched via FetchContent):
 - `tests/ParserTests.cpp` - KataGo binary parsing tests
 - `tests/TypesTests.cpp` - Type system tests
+
+Run with: `cd build && ctest --output-on-failure`
+
+### Python Integration Tests
+
+Located in `tests/test_cpp_vs_python.py` - validates C++ converter output against Python reference implementation.
+
+**Requirements:**
+- Requires custom coremltools fork with KataGo converter support
+- Python reference implementation: https://github.com/ChinChangYang/coremltools/blob/katagocoremltools/docs/katago/QUICK_START.md
+- Install instructions: See KataGoCoremltools repository
+
+**Test Models:**
+- Three small KataGo models are included in `tests/models/` (~22 MB total)
+- `g170e-b10c128-s1141046784-d204142634.bin.gz` (11 MB) - standard test model
+- `g170-b6c96-s175395328-d26788732.bin.gz` (3.6 MB) - smaller/faster test model
+- `b5c192nbt-distilled.bin.gz` (7 MB) - distilled model with metadata encoder
+- Models are from KataGo project (MIT/CC0 licensed, see `tests/models/README.md`)
+- Fixtures defined in `tests/conftest.py`
+
+Run with: `pytest tests/test_cpp_vs_python.py -v`
+Note: Use the conda environment with custom coremltools (e.g., `/path/to/KataGoCoremltools-py3.11/bin/pytest`)

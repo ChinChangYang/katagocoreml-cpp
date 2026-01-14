@@ -21,8 +21,5 @@ TEST(KataGoParserTest, RejectsUnsupportedVersions) {
     EXPECT_FALSE(KataGoParser::isVersionSupported(-1));
 }
 
-// TODO: Add integration tests with actual model files
-// These require test model files to be available
-
 }  // namespace test
 }  // namespace katagocoreml

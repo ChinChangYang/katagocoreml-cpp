@@ -145,6 +145,41 @@ cmake -DKATAGOCOREML_BUILD_TESTS=OFF ..
 cmake -DKATAGOCOREML_BUILD_TOOLS=OFF ..
 ```
 
+## Testing
+
+### C++ Unit Tests
+
+Run C++ unit tests using ctest (no model files required):
+
+```bash
+cd build
+ctest --output-on-failure
+```
+
+These tests validate the parser, type system, and core converter logic without requiring neural network models.
+
+### Python Integration Tests
+
+Python integration tests validate C++ converter output against the Python reference implementation.
+
+**Requirements:**
+- Requires custom coremltools fork with KataGo converter support
+- Python reference: [KataGoCoremltools Quick Start](https://github.com/ChinChangYang/coremltools/blob/katagocoremltools/docs/katago/QUICK_START.md)
+- Install the custom coremltools environment before running tests
+
+```bash
+# Run integration tests with the custom coremltools environment
+/path/to/KataGoCoremltools-py3.11/bin/pytest tests/test_cpp_vs_python.py -v
+```
+
+**Test Models:**
+- Integration tests use small KataGo models located in `tests/models/`
+- Three test models are included: standard (11 MB), smaller (3.7 MB), and distilled (7 MB)
+- Models are from the [KataGo project](https://github.com/lightvector/KataGo) (MIT/CC0 licensed)
+- See [tests/models/README.md](tests/models/README.md) for license details
+
+**Note**: For production Go gameplay, download the latest strong models from [KataGo releases](https://github.com/lightvector/KataGo/releases).
+
 ## Troubleshooting
 
 **Missing protobuf:**
