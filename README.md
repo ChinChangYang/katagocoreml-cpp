@@ -53,8 +53,11 @@ katago2coreml model.bin.gz KataGo.mlpackage
 # Convert 9x9 model with optimizations
 katago2coreml -x 9 -y 9 --optimize-identity-mask model.bin.gz KataGo-9x9.mlpackage
 
-# Use FLOAT16 for smaller model
+# Use FLOAT16 compute (mixed precision: FP32 I/O, FP16 compute)
 katago2coreml --float16 model.bin.gz KataGo-fp16.mlpackage
+
+# Pure FLOAT16 model (FP16 I/O and compute)
+katago2coreml --float16 --float16-io model.bin.gz KataGo-fp16-pure.mlpackage
 
 # Enable dynamic batch size (batch 1-8 positions)
 katago2coreml --dynamic-batch 1,8 model.bin.gz KataGo-batch.mlpackage
@@ -79,7 +82,8 @@ int main() {
     opts.board_x_size = 19;
     opts.board_y_size = 19;
     opts.optimize_identity_mask = true;  // ~6.5% speedup
-    opts.compute_precision = "FLOAT16";
+    opts.compute_precision = "FLOAT16";  // FP16 internal computation
+    opts.use_fp16_io = true;             // FP16 inputs/outputs (requires FP16 compute)
     opts.min_batch_size = 1;  // Minimum batch size
     opts.max_batch_size = 8;  // Maximum batch size (enables dynamic batch)
 
@@ -95,6 +99,39 @@ clang++ -std=c++17 $(pkg-config --cflags katagocoreml) example.cpp \
     $(pkg-config --libs katagocoreml) -o example
 ```
 
+## FLOAT16 Precision Modes
+
+The converter supports two FLOAT16 modes for reduced model size and improved performance:
+
+### Mixed Precision (`--float16`)
+- **Inputs/Outputs**: FLOAT32
+- **Internal computation**: FLOAT16
+- **Use case**: Best compatibility with existing code
+- **Model size**: ~50% reduction in weight storage
+- **Compatibility**: iOS 15+ (Core ML spec version 6)
+
+```bash
+katago2coreml --float16 model.bin.gz output.mlpackage
+```
+
+### Pure FP16 (`--float16 --float16-io`)
+- **Inputs/Outputs**: FLOAT16
+- **Internal computation**: FLOAT16
+- **Use case**: Maximum performance on Apple Silicon
+- **Model size**: ~50% reduction in weight storage
+- **Compatibility**: iOS 16+ (Core ML spec version 7)
+- **Note**: Requires FP16 input data preparation
+
+```bash
+katago2coreml --float16 --float16-io model.bin.gz output.mlpackage
+```
+
+| Mode | Inputs | Computation | Outputs | Spec Version |
+|------|--------|-------------|---------|--------------|
+| FLOAT32 (default) | FP32 | FP32 | FP32 | 6 (iOS 15+) |
+| Mixed Precision | FP32 | FP16 | FP32 | 6 (iOS 15+) |
+| Pure FP16 | FP16 | FP16 | FP16 | 7 (iOS 16+) |
+
 ## CLI Options
 
 ```
@@ -105,6 +142,7 @@ Options:
   -y, --board-y <size>       Board height (default: 19)
   --optimize-identity-mask   Optimize for full board (~6.5% faster inference)
   --float16                  Use FLOAT16 compute precision (smaller model)
+  --float16-io               Use FLOAT16 for inputs/outputs (requires --float16)
   --dynamic-batch <min,max>  Enable dynamic batch size (e.g., 1,8 or 1,-1 for unlimited)
   --info                     Show model info and exit (no conversion)
   -v, --verbose              Enable verbose output
@@ -123,6 +161,7 @@ Supported KataGo model versions: 8-16
 | `board_y_size` | int | 19 | Board height |
 | `optimize_identity_mask` | bool | false | Skip mask ops (~6.5% speedup) |
 | `compute_precision` | string | "FLOAT32" | "FLOAT32" or "FLOAT16" |
+| `use_fp16_io` | bool | false | Use FP16 for inputs/outputs (requires FP16 compute) |
 | `min_batch_size` | int | 1 | Minimum batch size for inference |
 | `max_batch_size` | int | 1 | Maximum batch size (>min enables dynamic batch, ≤0 for unlimited) |
 | `specification_version` | int | 6 | Core ML spec (6 = iOS 15+) |

@@ -28,6 +28,7 @@ void CoreMLSerializer::serialize(CoreML::Specification::MILSpec::Program* progra
 
     // Determine if using FP16 precision
     bool use_fp16 = (options.compute_precision == "FLOAT16");
+    bool use_fp16_io = use_fp16 && options.use_fp16_io;
 
     // Write weight blob (this sets blob_offset on each WeightEntry)
     writeWeightBlob(weights_dir, weights, use_fp16);
@@ -88,26 +89,31 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
         }
     };
 
+    // Determine data type for inputs/outputs
+    auto io_datatype = (options.compute_precision == "FLOAT16" && options.use_fp16_io)
+        ? CoreML::Specification::ArrayFeatureType::FLOAT16
+        : CoreML::Specification::ArrayFeatureType::FLOAT32;
+
     // Add input descriptions
     // spatial_input: [batch, 22, board_y, board_x]
     auto* spatial_input = desc->add_input();
     spatial_input->set_name("spatial_input");
     auto* spatial_type = spatial_input->mutable_type()->mutable_multiarraytype();
-    spatial_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    spatial_type->set_datatype(io_datatype);
     setBatchShape(spatial_type, {22, options.board_y_size, options.board_x_size});
 
     // global_input: [batch, 19]
     auto* global_input = desc->add_input();
     global_input->set_name("global_input");
     auto* global_type = global_input->mutable_type()->mutable_multiarraytype();
-    global_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    global_type->set_datatype(io_datatype);
     setBatchShape(global_type, {19});
 
     // input_mask: [batch, 1, board_y, board_x]
     auto* mask_input = desc->add_input();
     mask_input->set_name("input_mask");
     auto* mask_type = mask_input->mutable_type()->mutable_multiarraytype();
-    mask_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    mask_type->set_datatype(io_datatype);
     setBatchShape(mask_type, {1, options.board_y_size, options.board_x_size});
 
     // meta_input (optional, for human SL networks with metadata encoder): [batch, num_meta_channels]
@@ -115,7 +121,7 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
         auto* meta_input = desc->add_input();
         meta_input->set_name("meta_input");
         auto* meta_type = meta_input->mutable_type()->mutable_multiarraytype();
-        meta_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+        meta_type->set_datatype(io_datatype);
         setBatchShape(meta_type, {options.num_input_meta_channels});
     }
 
@@ -123,28 +129,28 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     auto* policy_output = desc->add_output();
     policy_output->set_name("policy_p2_conv");
     auto* policy_type = policy_output->mutable_type()->mutable_multiarraytype();
-    policy_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    policy_type->set_datatype(io_datatype);
 
     auto* pass_output = desc->add_output();
     // Pass output name: Python uses "policy_pass" for all model versions
     pass_output->set_name("policy_pass");
     auto* pass_type = pass_output->mutable_type()->mutable_multiarraytype();
-    pass_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    pass_type->set_datatype(io_datatype);
 
     auto* value_output = desc->add_output();
     value_output->set_name("value_v3_bias");
     auto* value_type = value_output->mutable_type()->mutable_multiarraytype();
-    value_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    value_type->set_datatype(io_datatype);
 
     auto* ownership_output = desc->add_output();
     ownership_output->set_name("value_ownership_conv");
     auto* ownership_type = ownership_output->mutable_type()->mutable_multiarraytype();
-    ownership_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    ownership_type->set_datatype(io_datatype);
 
     auto* score_output = desc->add_output();
     score_output->set_name("value_sv3_bias");
     auto* score_type = score_output->mutable_type()->mutable_multiarraytype();
-    score_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+    score_type->set_datatype(io_datatype);
 
     // Set metadata
     auto* metadata = desc->mutable_metadata();

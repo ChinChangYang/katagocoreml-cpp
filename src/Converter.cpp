@@ -35,6 +35,11 @@ void KataGoConverter::convert(const std::string& input_path,
     // Determine if using FP16 precision
     bool use_fp16 = (options.compute_precision == "FLOAT16");
 
+    // Validate configuration: use_fp16_io requires FP16 compute
+    if (options.use_fp16_io && !use_fp16) {
+        throw std::invalid_argument("use_fp16_io requires compute_precision=\"FLOAT16\"");
+    }
+
     // Build MIL program
     MILBuilder builder(model,
                        options.board_x_size,
@@ -42,7 +47,8 @@ void KataGoConverter::convert(const std::string& input_path,
                        options.optimize_identity_mask,
                        use_fp16,
                        options.min_batch_size,
-                       options.max_batch_size);
+                       options.max_batch_size,
+                       options.use_fp16_io);
     auto program = builder.build();
 
     // Get weights from builder
@@ -54,6 +60,11 @@ void KataGoConverter::convert(const std::string& input_path,
     final_options.model_version = model.model_version;
     final_options.meta_encoder_version = model.meta_encoder_version;
     final_options.num_input_meta_channels = model.num_input_meta_channels;
+
+    // FLOAT16 I/O requires specification version >= 7 (iOS 16+)
+    if (final_options.use_fp16_io && final_options.specification_version < 7) {
+        final_options.specification_version = 7;
+    }
 
     // Serialize to .mlpackage
     CoreMLSerializer serializer(final_options.specification_version);

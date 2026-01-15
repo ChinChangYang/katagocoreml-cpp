@@ -16,12 +16,14 @@ MILBuilder::MILBuilder(const KataGoModelDesc& model,
                        bool optimize_identity_mask,
                        bool use_fp16,
                        int min_batch_size,
-                       int max_batch_size)
+                       int max_batch_size,
+                       bool use_fp16_io)
     : m_model(model)
     , m_board_x_size(board_x_size)
     , m_board_y_size(board_y_size)
     , m_optimize_identity_mask(optimize_identity_mask)
     , m_use_fp16(use_fp16)
+    , m_use_fp16_io(use_fp16_io)
     , m_min_batch_size(min_batch_size)
     , m_max_batch_size(max_batch_size)
     , m_weight_dtype(use_fp16
@@ -63,7 +65,9 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
     auto* spatial_input = main_func.add_inputs();
     spatial_input->set_name("spatial_input");
     auto* spatial_type = spatial_input->mutable_type()->mutable_tensortype();
-    spatial_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    spatial_type->set_datatype(m_use_fp16 && m_use_fp16_io
+        ? CoreML::Specification::MILSpec::DataType::FLOAT16
+        : CoreML::Specification::MILSpec::DataType::FLOAT32);
     spatial_type->set_rank(4);
     setBatchDimension(spatial_type);
     spatial_type->add_dimensions()->mutable_constant()->set_size(m_model.num_input_channels);
@@ -74,7 +78,9 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
     auto* global_input = main_func.add_inputs();
     global_input->set_name("global_input");
     auto* global_type = global_input->mutable_type()->mutable_tensortype();
-    global_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    global_type->set_datatype(m_use_fp16 && m_use_fp16_io
+        ? CoreML::Specification::MILSpec::DataType::FLOAT16
+        : CoreML::Specification::MILSpec::DataType::FLOAT32);
     global_type->set_rank(2);
     setBatchDimension(global_type);
     global_type->add_dimensions()->mutable_constant()->set_size(m_model.num_input_global_channels);
@@ -83,7 +89,9 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
     auto* mask_input = main_func.add_inputs();
     mask_input->set_name("input_mask");
     auto* mask_type = mask_input->mutable_type()->mutable_tensortype();
-    mask_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    mask_type->set_datatype(m_use_fp16 && m_use_fp16_io
+        ? CoreML::Specification::MILSpec::DataType::FLOAT16
+        : CoreML::Specification::MILSpec::DataType::FLOAT32);
     mask_type->set_rank(4);
     setBatchDimension(mask_type);
     mask_type->add_dimensions()->mutable_constant()->set_size(1);
@@ -96,20 +104,22 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
         auto* meta_input = main_func.add_inputs();
         meta_input->set_name("meta_input");
         auto* meta_type = meta_input->mutable_type()->mutable_tensortype();
-        meta_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        meta_type->set_datatype(m_use_fp16 && m_use_fp16_io
+            ? CoreML::Specification::MILSpec::DataType::FLOAT16
+            : CoreML::Specification::MILSpec::DataType::FLOAT32);
         meta_type->set_rank(2);
         setBatchDimension(meta_type);
         meta_type->add_dimensions()->mutable_constant()->set_size(m_model.num_input_meta_channels);
         meta_input_name = "meta_input";
     }
 
-    // For FP16 mode, add cast operations after inputs
+    // For FP16 mode with FP32 I/O, add cast operations after inputs
     std::string spatial_name = "spatial_input";
     std::string global_name = "global_input";
     std::string mask_name = "input_mask";
     std::string meta_name = meta_input_name;
 
-    if (m_use_fp16) {
+    if (m_use_fp16 && !m_use_fp16_io) {
         // Cast spatial_input: [1, num_input_ch, H, W] fp32 -> fp16
         addCastOp(&main_block, "spatial_input", "spatial_input_cast_fp16", "fp16",
                   {1, m_model.num_input_channels, m_board_y_size, m_board_x_size});
@@ -144,14 +154,14 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
     std::string value_out, ownership_out, score_value_out;
     buildValueHead(&main_block, trunk_out, mask_name, value_out, ownership_out, score_value_out);
 
-    // For FP16 mode, add cast operations to convert outputs back to FP32
+    // For FP16 mode with FP32 I/O, add cast operations to convert outputs back to FP32
     std::string final_policy_out = policy_out;
     std::string final_pass_out = pass_out;
     std::string final_value_out = value_out;
     std::string final_ownership_out = ownership_out;
     std::string final_score_value_out = score_value_out;
 
-    if (m_use_fp16) {
+    if (m_use_fp16 && !m_use_fp16_io) {
         const auto& ph = m_model.policy_head;
         const auto& vh = m_model.value_head;
 
@@ -1972,7 +1982,8 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
     addBatchNormActivationOps(block, p1_biased, ph.p1_bn, ph.p1_activation, mask, p1_activated);
 
     // P2 conv -> policy output (match Python name)
-    policy_out = m_use_fp16 ? "policy_p2_conv_fp16" : "policy_p2_conv";
+    // Use _fp16 suffix only for mixed precision (FP16 compute with FP32 I/O)
+    policy_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_p2_conv_fp16" : "policy_p2_conv";
     addConvOp(block, p1_activated, ph.p2_conv, policy_out);
 
     // Pass move
@@ -1995,11 +2006,11 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
             pass_activated = pass_biased;
         }
 
-        pass_out = m_use_fp16 ? "policy_pass_fp16" : "policy_pass";  // Match Python naming
+        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";  // Match Python naming
         addMatMulOp(block, pass_activated, *ph.gpool_to_pass_mul2, pass_out);
     } else {
         // Pre-v15: single layer pass
-        pass_out = m_use_fp16 ? "policy_pass_fp16" : "policy_pass";  // pre-v15 name
+        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";  // pre-v15 name
         addMatMulOp(block, g1_pooled, ph.gpool_to_pass_mul, pass_out);
     }
 }
@@ -2041,15 +2052,15 @@ void MILBuilder::buildValueHead(CoreML::Specification::MILSpec::Block* block,
     }
 
     // V3: linear -> value output (fused matmul+bias -> linear) (match Python name)
-    value_out = m_use_fp16 ? "value_v3_bias_fp16" : "value_v3_bias";
+    value_out = (m_use_fp16 && !m_use_fp16_io) ? "value_v3_bias_fp16" : "value_v3_bias";
     addLinearOp(block, v2, vh.v3_mul, vh.v3_bias, value_out);
 
     // SV3: linear -> score value output (fused matmul+bias -> linear) (match Python name)
-    score_value_out = m_use_fp16 ? "value_sv3_bias_fp16" : "value_sv3_bias";
+    score_value_out = (m_use_fp16 && !m_use_fp16_io) ? "value_sv3_bias_fp16" : "value_sv3_bias";
     addLinearOp(block, v2, vh.sv3_mul, vh.sv3_bias, score_value_out);
 
     // Ownership conv (match Python name)
-    ownership_out = m_use_fp16 ? "value_ownership_conv_fp16" : "value_ownership_conv";
+    ownership_out = (m_use_fp16 && !m_use_fp16_io) ? "value_ownership_conv_fp16" : "value_ownership_conv";
     addConvOp(block, v1, vh.v_ownership_conv, ownership_out);
 }
 

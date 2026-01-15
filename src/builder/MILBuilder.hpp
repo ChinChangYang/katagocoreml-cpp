@@ -22,7 +22,8 @@ public:
                bool optimize_identity_mask,
                bool use_fp16 = false,
                int min_batch_size = 1,
-               int max_batch_size = 1);
+               int max_batch_size = 1,
+               bool use_fp16_io = false);
 
     /// Build and return the MIL program protobuf
     /// @return Unique pointer to MIL Program protobuf
@@ -41,6 +42,7 @@ private:
     int m_board_y_size;
     bool m_optimize_identity_mask;
     bool m_use_fp16;
+    bool m_use_fp16_io;
     int m_min_batch_size;
     int m_max_batch_size;
     CoreML::Specification::MILSpec::DataType m_weight_dtype;
