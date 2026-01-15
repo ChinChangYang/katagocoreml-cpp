@@ -55,6 +55,12 @@ katago2coreml -x 9 -y 9 --optimize-identity-mask model.bin.gz KataGo-9x9.mlpacka
 
 # Use FLOAT16 for smaller model
 katago2coreml --float16 model.bin.gz KataGo-fp16.mlpackage
+
+# Enable dynamic batch size (batch 1-8 positions)
+katago2coreml --dynamic-batch 1,8 model.bin.gz KataGo-batch.mlpackage
+
+# Unlimited batch size (for parallel inference)
+katago2coreml --dynamic-batch 1,-1 model.bin.gz KataGo-unlimited.mlpackage
 ```
 
 ### C++ API
@@ -74,6 +80,8 @@ int main() {
     opts.board_y_size = 19;
     opts.optimize_identity_mask = true;  // ~6.5% speedup
     opts.compute_precision = "FLOAT16";
+    opts.min_batch_size = 1;  // Minimum batch size
+    opts.max_batch_size = 8;  // Maximum batch size (enables dynamic batch)
 
     KataGoConverter::convert("model.bin.gz", "output.mlpackage", opts);
 
@@ -93,13 +101,14 @@ clang++ -std=c++17 $(pkg-config --cflags katagocoreml) example.cpp \
 Usage: katago2coreml [options] <input.bin[.gz]> <output.mlpackage>
 
 Options:
-  -x, --board-x <size>     Board width (default: 19)
-  -y, --board-y <size>     Board height (default: 19)
-  --optimize-identity-mask Optimize for full board (~6.5% faster inference)
-  --float16                Use FLOAT16 compute precision (smaller model)
-  --info                   Show model info and exit (no conversion)
-  -v, --verbose            Enable verbose output
-  -h, --help               Show this help message
+  -x, --board-x <size>       Board width (default: 19)
+  -y, --board-y <size>       Board height (default: 19)
+  --optimize-identity-mask   Optimize for full board (~6.5% faster inference)
+  --float16                  Use FLOAT16 compute precision (smaller model)
+  --dynamic-batch <min,max>  Enable dynamic batch size (e.g., 1,8 or 1,-1 for unlimited)
+  --info                     Show model info and exit (no conversion)
+  -v, --verbose              Enable verbose output
+  -h, --help                 Show this help message
 
 Supported KataGo model versions: 8-16
 ```
@@ -114,6 +123,8 @@ Supported KataGo model versions: 8-16
 | `board_y_size` | int | 19 | Board height |
 | `optimize_identity_mask` | bool | false | Skip mask ops (~6.5% speedup) |
 | `compute_precision` | string | "FLOAT32" | "FLOAT32" or "FLOAT16" |
+| `min_batch_size` | int | 1 | Minimum batch size for inference |
+| `max_batch_size` | int | 1 | Maximum batch size (>min enables dynamic batch, ≤0 for unlimited) |
 | `specification_version` | int | 6 | Core ML spec (6 = iOS 15+) |
 
 ### ModelInfo
@@ -122,6 +133,45 @@ Supported KataGo model versions: 8-16
 auto info = KataGoConverter::getModelInfo("model.bin.gz");
 // info.name, info.version, info.num_blocks, info.trunk_channels, etc.
 ```
+
+## Dynamic Batch Size
+
+Dynamic batch size allows the Core ML model to accept variable batch sizes at runtime, enabling efficient parallel inference of multiple board positions.
+
+### Usage Scenarios
+
+- **Single position** (default): `min_batch_size=1, max_batch_size=1` - Fixed batch for single board inference
+- **Bounded batch**: `min_batch_size=1, max_batch_size=8` - Variable batch from 1-8 positions
+- **Unbounded batch**: `min_batch_size=1, max_batch_size=-1` - Unlimited batch size for maximum parallelism
+
+### CLI Examples
+
+```bash
+# Fixed single batch (default, backward compatible)
+katago2coreml model.bin.gz output.mlpackage
+
+# Dynamic batch 1-8 positions
+katago2coreml --dynamic-batch 1,8 model.bin.gz output.mlpackage
+
+# Unlimited batch size
+katago2coreml --dynamic-batch 1,-1 model.bin.gz output.mlpackage
+```
+
+### C++ API Example
+
+```cpp
+ConversionOptions opts;
+opts.min_batch_size = 1;
+opts.max_batch_size = 8;  // Enables dynamic batch
+KataGoConverter::convert("model.bin.gz", "output.mlpackage", opts);
+```
+
+### Performance Considerations
+
+- **Batch size** affects memory usage - larger batches require more memory
+- **Dynamic batch** adds minimal overhead compared to fixed batch
+- **Optimal batch size** depends on your hardware (ANE, GPU, CPU) and model size
+- For single-position inference, use the default fixed batch size
 
 ## KataGo Version Support
 
