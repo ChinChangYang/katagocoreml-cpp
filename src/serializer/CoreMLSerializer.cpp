@@ -152,7 +152,7 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     (*metadata->mutable_userdefined())["board_x_size"] = std::to_string(options.board_x_size);
     (*metadata->mutable_userdefined())["board_y_size"] = std::to_string(options.board_y_size);
     (*metadata->mutable_userdefined())["converter"] = "katagocoreml";
-    (*metadata->mutable_userdefined())["converter_version"] = "1.0.0";
+    (*metadata->mutable_userdefined())["converter_version"] = "1.1.0";
 
     // Set the MIL program (use Swap to transfer ownership)
     auto* ml_program = model->mutable_mlprogram();
