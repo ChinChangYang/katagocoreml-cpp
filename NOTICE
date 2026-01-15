@@ -37,6 +37,21 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
+KataGo Neural Network Models (tests/models/)
+================================================================================
+
+**g170 series models (g170-b6c96, g170e-b10c128):**
+From: KataGo project (https://github.com/lightvector/KataGo)
+License: CC0 (Public Domain)
+These are from the oldest KataGo training runs and are released into the public
+domain. No restrictions on use.
+
+**b5c192nbt-distilled model:**
+Copyright (c) 2025, Chin-Chang Yang
+License: BSD-3-Clause (same as this project)
+This is a custom-trained model included for testing purposes.
+
+================================================================================
 nlohmann/json
 From: https://github.com/nlohmann/json
 License: MIT

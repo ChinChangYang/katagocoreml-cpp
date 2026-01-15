@@ -44,7 +44,7 @@ public:
 
     /// Get library version string
     static std::string getVersion() {
-        return "1.0.0";
+        return "1.1.0";
     }
 };
 

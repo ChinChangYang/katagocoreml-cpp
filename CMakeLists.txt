@@ -174,6 +174,7 @@ if(KATAGOCOREML_BUILD_TESTS)
     add_executable(katagocoreml_tests
         tests/ParserTests.cpp
         tests/TypesTests.cpp
+        tests/BatchSizeTests.cpp
     )
     target_link_libraries(katagocoreml_tests
         PRIVATE

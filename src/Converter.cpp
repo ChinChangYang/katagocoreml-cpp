@@ -20,6 +20,14 @@ void KataGoConverter::convert(const std::string& input_path,
         throw std::invalid_argument("board_y_size must be in range [2, 37]");
     }
 
+    // Validate batch sizes
+    if (options.min_batch_size < 1) {
+        throw std::invalid_argument("min_batch_size must be at least 1");
+    }
+    if (options.max_batch_size > 0 && options.max_batch_size < options.min_batch_size) {
+        throw std::invalid_argument("max_batch_size must be >= min_batch_size or <= 0 for unlimited");
+    }
+
     // Parse KataGo model
     KataGoParser parser(input_path);
     KataGoModelDesc model = parser.parse();
@@ -32,7 +40,9 @@ void KataGoConverter::convert(const std::string& input_path,
                        options.board_x_size,
                        options.board_y_size,
                        options.optimize_identity_mask,
-                       use_fp16);
+                       use_fp16,
+                       options.min_batch_size,
+                       options.max_batch_size);
     auto program = builder.build();
 
     // Get weights from builder

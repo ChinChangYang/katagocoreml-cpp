@@ -33,6 +33,23 @@ struct ConversionOptions {
 
     /// Number of metadata input channels (192 for human SL networks)
     int num_input_meta_channels = 0;
+
+    /// Minimum batch size for inference (must be >= 1)
+    /// Default: 1 (single sample inference)
+    int min_batch_size = 1;
+
+    /// Maximum batch size for inference
+    /// If equal to min_batch_size, uses fixed batch size
+    /// If greater than min_batch_size, enables dynamic batch support
+    /// If <= 0, allows unlimited batch size (unbounded)
+    /// Default: 1 (fixed single batch, backward compatible)
+    int max_batch_size = 1;
+
+    /// Check if dynamic batch is enabled
+    /// Dynamic batch allows variable batch sizes at runtime
+    bool isDynamicBatch() const {
+        return min_batch_size != max_batch_size || max_batch_size <= 0;
+    }
 };
 
 /// Information about a KataGo model (without full conversion)

@@ -14,14 +14,14 @@ import pytest
 # Path Configuration
 # ==============================================================================
 
-# Repository root (katagocoreml is at KataGoCoremltools/katagocoreml)
-REPO_ROOT = Path(__file__).parent.parent.parent
+# Repository root (katagocoreml-cpp standalone repository)
+REPO_ROOT = Path(__file__).parent.parent
 
 # C++ CLI tool location
-KATAGO2COREML_BUILD_PATH = REPO_ROOT / "katagocoreml" / "build" / "katago2coreml"
+KATAGO2COREML_BUILD_PATH = REPO_ROOT / "build" / "katago2coreml"
 
-# KataGo model locations
-KATAGO_MODELS_DIR = REPO_ROOT / "KataGo" / "cpp" / "tests" / "models"
+# KataGo model locations (local to this repository)
+KATAGO_MODELS_DIR = REPO_ROOT / "tests" / "models"
 
 
 # ==============================================================================
