@@ -14,8 +14,15 @@ with equivalent inference results within acceptable numerical tolerance.
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING, Dict
 
 import pytest
+
+if TYPE_CHECKING:
+    import numpy as np
+
+# Random seed base for deterministic test input generation
+RANDOM_SEED_BASE = 42
 
 
 # ==============================================================================
@@ -30,6 +37,8 @@ def convert_with_cpp(
     board_size: int,
     optimize_mask: bool,
     float16: bool = False,
+    min_batch_size: int = 1,
+    max_batch_size: int = 1,
 ) -> None:
     """Convert KataGo model using C++ CLI tool.
 
@@ -40,6 +49,8 @@ def convert_with_cpp(
         board_size: Board size (e.g., 9, 13, 19)
         optimize_mask: Enable optimize_identity_mask flag
         float16: Enable FLOAT16 precision
+        min_batch_size: Minimum batch size (default: 1)
+        max_batch_size: Maximum batch size (default: 1, -1 for unlimited)
 
     Raises:
         subprocess.CalledProcessError: If conversion fails
@@ -55,6 +66,9 @@ def convert_with_cpp(
 
     if float16:
         cmd.append("--float16")
+
+    if min_batch_size != 1 or max_batch_size != 1:
+        cmd.extend(["--dynamic-batch", f"{min_batch_size},{max_batch_size}"])
 
     cmd.extend([str(model_path), str(output_path)])
 
@@ -105,6 +119,61 @@ def convert_with_python(
     )
 
     mlmodel.save(str(output_path))
+
+
+def create_batched_inputs(
+    batch_size: int,
+    board_size: int,
+    has_meta_input: bool = False,
+    start_idx: int = 0
+) -> "Dict[str, np.ndarray]":
+    """Create deterministic batched inputs for reproducibility.
+
+    Each sample is generated with a consistent seed (42 + start_idx + sample_index) so that
+    sample[i] is identical regardless of batch size. This enables per-sample
+    consistency validation across different batch configurations.
+
+    Args:
+        batch_size: Number of samples in the batch (must be positive)
+        board_size: Board dimension (e.g., 9, 13, 19)
+        has_meta_input: Whether to include meta_input for metadata encoder
+        start_idx: Starting index for seed calculation (default: 0)
+
+    Returns:
+        Dict with input arrays (spatial_input, global_input, input_mask, optionally meta_input)
+
+    Raises:
+        ValueError: If batch_size is not positive or start_idx is negative
+    """
+    import numpy as np
+
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+    if start_idx < 0:
+        raise ValueError(f"start_idx must be non-negative, got {start_idx}")
+
+    spatial_list = []
+    global_list = []
+    meta_list = []
+
+    for i in range(batch_size):
+        # Use modulo to prevent integer overflow in seed calculation
+        np.random.seed((RANDOM_SEED_BASE + start_idx + i) % (2**32))  # Consistent seed per sample index
+        spatial_list.append(np.random.randn(1, 22, board_size, board_size))
+        global_list.append(np.random.randn(1, 19))
+        if has_meta_input:
+            meta_list.append(np.zeros((1, 192)))
+
+    inputs = {
+        "spatial_input": np.concatenate(spatial_list, axis=0).astype(np.float32),
+        "global_input": np.concatenate(global_list, axis=0).astype(np.float32),
+        "input_mask": np.ones((batch_size, 1, board_size, board_size), dtype=np.float32),
+    }
+
+    if has_meta_input:
+        inputs["meta_input"] = np.concatenate(meta_list, axis=0).astype(np.float32)
+
+    return inputs
 
 
 # ==============================================================================
@@ -160,7 +229,7 @@ class TestCppVsPythonConverterFP32:
             temp_output_dir: Temporary directory for outputs (fixture)
         """
         import platform
-        if platform.processor() != "arm":
+        if platform.machine() != "arm64":
             pytest.skip("Core ML inference only available on Apple Silicon")
 
         import numpy as np
@@ -200,7 +269,7 @@ class TestCppVsPythonConverterFP32:
         python_model = ct.models.MLModel(str(python_output))
 
         # Generate deterministic random input
-        np.random.seed(42)
+        np.random.seed(RANDOM_SEED_BASE)
         spatial_input = np.random.randn(1, 22, board_size, board_size).astype(np.float32)
         global_input = np.random.randn(1, 19).astype(np.float32)
         input_mask = np.ones((1, 1, board_size, board_size), dtype=np.float32)
@@ -298,6 +367,156 @@ class TestConverterSmoke:
             pytest.skip(f"coremltools KataGo converter not available: {e}")
 
 
+class TestCppDynamicBatch:
+    """Tests for C++ converter dynamic batch functionality.
+
+    Validates that dynamic batch models produce numerically equivalent outputs
+    to fixed batch models. Uses intra-implementation validation (C++ vs C++).
+
+    Test strategy:
+    - Compare dynamic batch models against fixed (1,1) baseline
+    - Test each dynamic model at batch=4
+    - Run fixed (1,1) model 4 times independently for comparison
+    - Validate per-sample numerical equivalence
+
+    Config: smaller model (g170-b6c96), 9x9 board, FP32, optimize_mask=False
+    """
+
+    @pytest.mark.parametrize(
+        "batch_config",
+        [
+            (1, 4),   # Small dynamic
+            (1, 8),   # Medium dynamic
+            (1, -1),  # Unlimited
+        ],
+        ids=["dynamic_1-4", "dynamic_1-8", "dynamic_unlimited"]
+    )
+    def test_dynamic_batch_equivalence(
+        self,
+        batch_config: tuple,
+        katago2coreml_exe: Path,
+        smaller_model_bin: Path,
+        temp_output_dir: Path,
+    ):
+        """Test dynamic batch models produce equivalent outputs to fixed baseline.
+
+        For each dynamic batch configuration:
+        1. Convert model with dynamic batch settings
+        2. Convert baseline model with fixed batch (1,1)
+        3. Generate deterministic batched inputs (batch=4)
+        4. Run inference on dynamic model (batch=4)
+        5. Run inference on baseline model 4 times (batch=1 each)
+        6. Compare outputs sample-by-sample
+
+        Args:
+            batch_config: Tuple of (min_batch_size, max_batch_size)
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            smaller_model_bin: Path to smaller test model (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        import numpy as np
+        import coremltools as ct
+
+        min_batch, max_batch = batch_config
+        board_size = 9
+        test_batch_size = 4
+
+        # Convert dynamic batch model
+        batch_label = f"{max_batch}" if max_batch > 0 else "unlimited"
+        dynamic_output = temp_output_dir / f"dynamic_1-{batch_label}.mlpackage"
+
+        convert_with_cpp(
+            katago2coreml_exe,
+            smaller_model_bin,
+            dynamic_output,
+            board_size,
+            optimize_mask=False,
+            float16=False,
+            min_batch_size=min_batch,
+            max_batch_size=max_batch,
+        )
+
+        # Convert baseline fixed batch model
+        baseline_output = temp_output_dir / "fixed_1-1.mlpackage"
+        convert_with_cpp(
+            katago2coreml_exe,
+            smaller_model_bin,
+            baseline_output,
+            board_size,
+            optimize_mask=False,
+            float16=False,
+            min_batch_size=1,
+            max_batch_size=1,
+        )
+
+        # Load models
+        dynamic_model = ct.models.MLModel(str(dynamic_output))
+        baseline_model = ct.models.MLModel(str(baseline_output))
+
+        # Check for meta_input
+        spec = dynamic_model.get_spec()
+        has_meta_input = "meta_input" in [inp.name for inp in spec.description.input]
+
+        # Run dynamic model with batch=4
+        dynamic_inputs = create_batched_inputs(test_batch_size, board_size, has_meta_input)
+        dynamic_outputs = dynamic_model.predict(dynamic_inputs)
+
+        # Validate output shapes have correct batch dimension
+        for key in dynamic_outputs.keys():
+            output_shape = dynamic_outputs[key].shape
+            if len(output_shape) == 0 or output_shape[0] != test_batch_size:
+                pytest.fail(
+                    f"Output '{key}' has unexpected shape {output_shape}. "
+                    f"Expected batch dimension (first dimension) to be {test_batch_size}"
+                )
+
+        # Run baseline model 4 times independently
+        baseline_outputs_list = []
+        for i in range(test_batch_size):
+            single_input = create_batched_inputs(1, board_size, has_meta_input, start_idx=i)
+            baseline_out = baseline_model.predict(single_input)
+            baseline_outputs_list.append(baseline_out)
+
+        # Compare per-sample outputs
+        output_tolerances = {
+            "policy_p2_conv": 0.015,
+            "policy_pass_mul2": 0.015,
+            "policy_pass": 0.015,
+            "value_v3_bias": 0.01,
+            "value_ownership_conv": 0.03,
+            "value_sv3_bias": 0.015,
+        }
+        default_tolerance = 0.03
+
+        failed_outputs = []
+        for sample_idx in range(test_batch_size):
+            for key in dynamic_outputs.keys():
+                if key not in baseline_outputs_list[sample_idx]:
+                    failed_outputs.append(f"Sample {sample_idx}: Missing key '{key}'")
+                    continue
+
+                dynamic_val = dynamic_outputs[key][sample_idx:sample_idx+1]
+                baseline_val = baseline_outputs_list[sample_idx][key]
+
+                max_diff = np.max(np.abs(dynamic_val - baseline_val))
+                max_ref = np.max(np.abs(baseline_val))
+                rel_error = max_diff / max_ref if max_ref > 1e-8 else max_diff
+
+                tolerance = output_tolerances.get(key, default_tolerance)
+                if rel_error > tolerance:
+                    failed_outputs.append(
+                        f"Sample {sample_idx}, '{key}': error={rel_error:.4f} > {tolerance} "
+                        f"(max_diff={max_diff:.6f}, max_ref={max_ref:.6f})"
+                    )
+
+        if failed_outputs:
+            pytest.fail(f"Dynamic batch {batch_config} failed:\n" + "\n".join(failed_outputs))
+
+
 class TestCppVsPythonConverterFP16:
     """Tests for C++ FLOAT16 converter functionality.
 
@@ -342,7 +561,7 @@ class TestCppVsPythonConverterFP16:
             temp_output_dir: Temporary directory for outputs (fixture)
         """
         import platform
-        if platform.processor() != "arm":
+        if platform.machine() != "arm64":
             pytest.skip("Core ML inference only available on Apple Silicon")
 
         import numpy as np
@@ -380,7 +599,7 @@ class TestCppVsPythonConverterFP16:
         python_model = ct.models.MLModel(str(python_output))
 
         # Generate random input
-        np.random.seed(42)
+        np.random.seed(RANDOM_SEED_BASE)
         spatial_input = np.random.randn(1, 22, board_size, board_size).astype(np.float32)
         global_input = np.random.randn(1, 19).astype(np.float32)
         input_mask = np.ones((1, 1, board_size, board_size), dtype=np.float32)

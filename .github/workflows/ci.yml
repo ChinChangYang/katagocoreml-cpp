@@ -17,7 +17,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install cmake protobuf abseil zlib
+          # cmake and zlib are pre-installed on GitHub Actions macOS runners
+          brew install protobuf abseil
 
       - name: Configure CMake
         run: |
