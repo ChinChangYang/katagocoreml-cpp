@@ -11,6 +11,16 @@ option(KATAGOCOREML_BUILD_TESTS "Build unit tests" ON)
 option(KATAGOCOREML_BUILD_TOOLS "Build command-line tools" ON)
 
 # ============================================================================
+# Configure Version Header
+# ============================================================================
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/katagocoreml/Version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/katagocoreml/Version.hpp"
+    @ONLY
+)
+
+# ============================================================================
 # External Dependencies
 # ============================================================================
 
@@ -106,6 +116,7 @@ add_library(katagocoreml STATIC
 target_include_directories(katagocoreml
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -202,6 +213,11 @@ install(TARGETS katagocoreml
 
 install(DIRECTORY include/katagocoreml
     DESTINATION include
+)
+
+# Install generated version header
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/katagocoreml/Version.hpp"
+    DESTINATION include/katagocoreml
 )
 
 if(KATAGOCOREML_BUILD_TOOLS)

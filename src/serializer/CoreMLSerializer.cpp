@@ -3,6 +3,7 @@
 
 #include "CoreMLSerializer.hpp"
 #include "WeightSerializer.hpp"
+#include "katagocoreml/Version.hpp"
 #include "MIL.pb.h"
 #include "Model.pb.h"
 #include "FeatureTypes.pb.h"
@@ -95,19 +96,19 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
         : CoreML::Specification::ArrayFeatureType::FLOAT32;
 
     // Add input descriptions
-    // spatial_input: [batch, 22, board_y, board_x]
+    // spatial_input: [batch, num_input_channels, board_y, board_x]
     auto* spatial_input = desc->add_input();
     spatial_input->set_name("spatial_input");
     auto* spatial_type = spatial_input->mutable_type()->mutable_multiarraytype();
     spatial_type->set_datatype(io_datatype);
-    setBatchShape(spatial_type, {22, options.board_y_size, options.board_x_size});
+    setBatchShape(spatial_type, {options.num_input_channels, options.board_y_size, options.board_x_size});
 
-    // global_input: [batch, 19]
+    // global_input: [batch, num_input_global_channels]
     auto* global_input = desc->add_input();
     global_input->set_name("global_input");
     auto* global_type = global_input->mutable_type()->mutable_multiarraytype();
     global_type->set_datatype(io_datatype);
-    setBatchShape(global_type, {19});
+    setBatchShape(global_type, {options.num_input_global_channels});
 
     // input_mask: [batch, 1, board_y, board_x]
     auto* mask_input = desc->add_input();
@@ -188,7 +189,7 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     user_meta["board_x_size"] = std::to_string(options.board_x_size);
     user_meta["board_y_size"] = std::to_string(options.board_y_size);
     user_meta["converter"] = "katagocoreml";
-    user_meta["converter_version"] = "1.1.0";
+    user_meta["converter_version"] = VERSION;
 
     // Model info
     user_meta["model_version"] = std::to_string(options.model_version);

@@ -4,6 +4,7 @@
 // Command-line tool for converting KataGo models to Core ML format.
 
 #include "katagocoreml/KataGoConverter.hpp"
+#include "katagocoreml/Version.hpp"
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -35,7 +36,7 @@ void printUsage(const char* program) {
               << "\n"
               << "Supported KataGo model versions: 8-16\n"
               << "\n"
-              << "katagocoreml version " << katagocoreml::KataGoConverter::getVersion() << "\n";
+              << "katagocoreml version " << katagocoreml::VERSION << "\n";
 }
 
 void printModelInfo(const katagocoreml::ModelInfo& info) {
