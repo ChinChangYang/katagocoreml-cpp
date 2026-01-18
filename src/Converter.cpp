@@ -6,6 +6,7 @@
 #include "builder/MILBuilder.hpp"
 #include "serializer/CoreMLSerializer.hpp"
 #include <stdexcept>
+#include <filesystem>
 
 namespace katagocoreml {
 
@@ -60,6 +61,17 @@ void KataGoConverter::convert(const std::string& input_path,
     final_options.model_version = model.model_version;
     final_options.meta_encoder_version = model.meta_encoder_version;
     final_options.num_input_meta_channels = model.num_input_meta_channels;
+
+    // Add model architecture info for metadata
+    final_options.num_blocks = model.trunk.num_blocks;
+    final_options.trunk_channels = model.trunk.trunk_num_channels;
+    final_options.model_name = model.name;
+
+    // Extract filename from input path
+    if (final_options.source_filename.empty()) {
+        std::filesystem::path p(input_path);
+        final_options.source_filename = p.filename().string();
+    }
 
     // FLOAT16 I/O requires specification version >= 7 (iOS 16+)
     if (final_options.use_fp16_io && final_options.specification_version < 7) {
