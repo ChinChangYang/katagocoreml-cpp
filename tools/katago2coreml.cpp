@@ -20,6 +20,8 @@ void printUsage(const char* program) {
               << "  --float16                Use FLOAT16 compute precision\n"
               << "  --float16-io             Use FLOAT16 for inputs/outputs (requires --float16)\n"
               << "  --dynamic-batch <min,max> Enable dynamic batch (e.g. 1,8 or 1,-1 for unlimited)\n"
+              << "  --author <name>          Set model author in metadata\n"
+              << "  --license <license>      Set model license in metadata (e.g. MIT, CC0)\n"
               << "  --info                   Show model info and exit\n"
               << "  -v, --verbose            Enable verbose output\n"
               << "  -h, --help               Show this help\n"
@@ -103,6 +105,18 @@ int main(int argc, char* argv[]) {
             }
             options.min_batch_size = std::stoi(batch_arg.substr(0, comma));
             options.max_batch_size = std::stoi(batch_arg.substr(comma + 1));
+        } else if (arg == "--author") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: " << arg << " requires a value\n";
+                return 1;
+            }
+            options.author = argv[++i];
+        } else if (arg == "--license") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: " << arg << " requires a value\n";
+                return 1;
+            }
+            options.license = argv[++i];
         } else if (arg[0] == '-') {
             std::cerr << "Error: Unknown option: " << arg << "\n";
             return 1;
@@ -143,6 +157,12 @@ int main(int argc, char* argv[]) {
                       << "  Compute precision: " << options.compute_precision << "\n"
                       << "  Batch size: " << options.min_batch_size
                       << (options.isDynamicBatch() ? "-" + std::to_string(options.max_batch_size) : "") << "\n";
+            if (!options.author.empty()) {
+                std::cout << "  Author: " << options.author << "\n";
+            }
+            if (!options.license.empty()) {
+                std::cout << "  License: " << options.license << "\n";
+            }
         }
 
         // First get model info

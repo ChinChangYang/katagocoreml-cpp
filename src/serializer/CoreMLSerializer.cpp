@@ -154,11 +154,52 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
 
     // Set metadata
     auto* metadata = desc->mutable_metadata();
-    metadata->set_shortdescription("KataGo neural network model");
-    (*metadata->mutable_userdefined())["board_x_size"] = std::to_string(options.board_x_size);
-    (*metadata->mutable_userdefined())["board_y_size"] = std::to_string(options.board_y_size);
-    (*metadata->mutable_userdefined())["converter"] = "katagocoreml";
-    (*metadata->mutable_userdefined())["converter_version"] = "1.1.0";
+
+    // Build enhanced description: "KataGo - 10 blocks, 128 channels (from model.bin.gz)"
+    std::string description = "KataGo";
+    if (options.num_blocks > 0 && options.trunk_channels > 0) {
+        description += " - " + std::to_string(options.num_blocks) + " blocks, "
+                    + std::to_string(options.trunk_channels) + " channels";
+    } else {
+        description += " neural network model";
+    }
+    if (!options.source_filename.empty()) {
+        description += " (from " + options.source_filename + ")";
+    }
+    metadata->set_shortdescription(description);
+
+    // Set author if provided
+    if (!options.author.empty()) {
+        metadata->set_author(options.author);
+    }
+
+    // Set license if provided
+    if (!options.license.empty()) {
+        metadata->set_license(options.license);
+    }
+
+    // Set version string to model name
+    if (!options.model_name.empty()) {
+        metadata->set_versionstring(options.model_name);
+    }
+
+    // User-defined metadata
+    auto& user_meta = *metadata->mutable_userdefined();
+    user_meta["board_x_size"] = std::to_string(options.board_x_size);
+    user_meta["board_y_size"] = std::to_string(options.board_y_size);
+    user_meta["converter"] = "katagocoreml";
+    user_meta["converter_version"] = "1.1.0";
+
+    // Model info
+    user_meta["model_version"] = std::to_string(options.model_version);
+    if (options.meta_encoder_version > 0) {
+        user_meta["meta_encoder_version"] = std::to_string(options.meta_encoder_version);
+    }
+    user_meta["optimize_identity_mask"] = options.optimize_identity_mask ? "true" : "false";
+
+    // Precision info
+    user_meta["compute_precision"] = options.compute_precision;
+    user_meta["io_precision"] = options.use_fp16_io ? "FLOAT16" : "FLOAT32";
 
     // Set the MIL program (use Swap to transfer ownership)
     auto* ml_program = model->mutable_mlprogram();

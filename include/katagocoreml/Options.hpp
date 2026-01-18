@@ -52,6 +52,25 @@ struct ConversionOptions {
     /// Default: 1 (fixed single batch, backward compatible)
     int max_batch_size = 1;
 
+    /// Author name (who ran the converter) - optional, set via CLI
+    std::string author;
+
+    /// License for the model - optional, set via CLI
+    /// Typical values: "MIT", "CC0", "BSD-3-Clause"
+    std::string license;
+
+    /// Source KataGo model filename (set internally)
+    std::string source_filename;
+
+    /// Number of residual blocks (set internally)
+    int num_blocks = 0;
+
+    /// Trunk channel width (set internally)
+    int trunk_channels = 0;
+
+    /// Model name from KataGo binary (set internally)
+    std::string model_name;
+
     /// Check if dynamic batch is enabled
     /// Dynamic batch allows variable batch sizes at runtime
     bool isDynamicBatch() const {

@@ -64,6 +64,9 @@ katago2coreml --dynamic-batch 1,8 model.bin.gz KataGo-batch.mlpackage
 
 # Unlimited batch size (for parallel inference)
 katago2coreml --dynamic-batch 1,-1 model.bin.gz KataGo-unlimited.mlpackage
+
+# Add author and license metadata
+katago2coreml --author "Your Name" --license MIT model.bin.gz KataGo.mlpackage
 ```
 
 ### C++ API
@@ -144,6 +147,8 @@ Options:
   --float16                  Use FLOAT16 compute precision (smaller model)
   --float16-io               Use FLOAT16 for inputs/outputs (requires --float16)
   --dynamic-batch <min,max>  Enable dynamic batch size (e.g., 1,8 or 1,-1 for unlimited)
+  --author <name>            Set model author in metadata
+  --license <license>        Set model license in metadata (e.g., MIT, CC0)
   --info                     Show model info and exit (no conversion)
   -v, --verbose              Enable verbose output
   -h, --help                 Show this help message
@@ -164,6 +169,8 @@ Supported KataGo model versions: 8-16
 | `use_fp16_io` | bool | false | Use FP16 for inputs/outputs (requires FP16 compute) |
 | `min_batch_size` | int | 1 | Minimum batch size for inference |
 | `max_batch_size` | int | 1 | Maximum batch size (>min enables dynamic batch, ≤0 for unlimited) |
+| `author` | string | "" | Model author name (optional metadata) |
+| `license` | string | "" | Model license (e.g., "MIT", "CC0") |
 | `specification_version` | int | 6 | Core ML spec (6 = iOS 15+) |
 
 ### ModelInfo
