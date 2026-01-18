@@ -18,6 +18,7 @@ void printUsage(const char* program) {
               << "  -y, --board-y <size>     Board height (default: 19)\n"
               << "  --optimize-identity-mask Optimize for full board (skip mask ops)\n"
               << "  --float16                Use FLOAT16 compute precision\n"
+              << "  --float16-io             Use FLOAT16 for inputs/outputs (requires --float16)\n"
               << "  --dynamic-batch <min,max> Enable dynamic batch (e.g. 1,8 or 1,-1 for unlimited)\n"
               << "  --info                   Show model info and exit\n"
               << "  -v, --verbose            Enable verbose output\n"
@@ -75,6 +76,8 @@ int main(int argc, char* argv[]) {
             options.optimize_identity_mask = true;
         } else if (arg == "--float16") {
             options.compute_precision = "FLOAT16";
+        } else if (arg == "--float16-io") {
+            options.use_fp16_io = true;
         } else if (arg == "-x" || arg == "--board-x") {
             if (i + 1 >= argc) {
                 std::cerr << "Error: " << arg << " requires a value\n";

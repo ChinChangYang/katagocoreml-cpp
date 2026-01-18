@@ -37,6 +37,7 @@ def convert_with_cpp(
     board_size: int,
     optimize_mask: bool,
     float16: bool = False,
+    float16_io: bool = False,
     min_batch_size: int = 1,
     max_batch_size: int = 1,
 ) -> None:
@@ -49,6 +50,7 @@ def convert_with_cpp(
         board_size: Board size (e.g., 9, 13, 19)
         optimize_mask: Enable optimize_identity_mask flag
         float16: Enable FLOAT16 precision
+        float16_io: Enable FLOAT16 for inputs/outputs (requires float16=True)
         min_batch_size: Minimum batch size (default: 1)
         max_batch_size: Maximum batch size (default: 1, -1 for unlimited)
 
@@ -66,6 +68,9 @@ def convert_with_cpp(
 
     if float16:
         cmd.append("--float16")
+
+    if float16_io:
+        cmd.append("--float16-io")
 
     if min_batch_size != 1 or max_batch_size != 1:
         cmd.extend(["--dynamic-batch", f"{min_batch_size},{max_batch_size}"])
@@ -693,3 +698,309 @@ class TestCppVsPythonConverterFP16:
             f"(expected ~{expected_ratio}). "
             f"FP32: {fp32_size} bytes, FP16: {fp16_size} bytes"
         )
+
+
+class TestCppFP16IO:
+    """Tests for C++ FLOAT16 I/O converter functionality.
+
+    Tests the pure FP16 mode where model inputs and outputs are FLOAT16,
+    not just internal computation. This requires iOS 16+ (spec version 7).
+
+    Pure FP16 mode differences from mixed precision:
+    1. Model inputs are FLOAT16 (not FLOAT32)
+    2. No cast operations at input boundary
+    3. Internal operations use FLOAT16
+    4. No cast operations at output boundary
+    5. Model outputs are FLOAT16 (not FLOAT32)
+    """
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "g170-b6c96-s175395328-d26788732.bin.gz",       # Smaller model
+            "b5c192nbt-distilled.bin.gz",                   # Distilled model (human SL with metadata)
+        ],
+    )
+    @pytest.mark.parametrize("board_size", [9, 19])
+    def test_fp16_io_model_compiles(
+        self,
+        model_name: str,
+        board_size: int,
+        katago2coreml_exe: Path,
+        all_test_models: dict,
+        temp_output_dir: Path,
+    ):
+        """Test that FP16 I/O models compile and load successfully.
+
+        Args:
+            model_name: Name of the KataGo model file
+            board_size: Board size (9 or 19)
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            all_test_models: Dict mapping model names to paths (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        # Skip if model not available
+        if model_name not in all_test_models:
+            pytest.skip(f"Model not available: {model_name}")
+
+        model_path = all_test_models[model_name]
+
+        # Convert with FP16 I/O
+        output = temp_output_dir / f"cpp_fp16_io_{board_size}x{board_size}.mlpackage"
+
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=True,
+        )
+
+        # Load model
+        import coremltools as ct
+        model = ct.models.MLModel(str(output))
+        spec = model.get_spec()
+
+        # Verify specification version is 7 (iOS 16+)
+        assert spec.specificationVersion == 7, (
+            f"Expected spec version 7 for FP16 I/O, got {spec.specificationVersion}"
+        )
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "g170-b6c96-s175395328-d26788732.bin.gz",
+        ],
+    )
+    def test_fp16_io_input_output_dtypes(
+        self,
+        model_name: str,
+        katago2coreml_exe: Path,
+        all_test_models: dict,
+        temp_output_dir: Path,
+    ):
+        """Verify all inputs and outputs are FLOAT16 type.
+
+        Args:
+            model_name: Name of the KataGo model file
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            all_test_models: Dict mapping model names to paths (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        # Skip if model not available
+        if model_name not in all_test_models:
+            pytest.skip(f"Model not available: {model_name}")
+
+        model_path = all_test_models[model_name]
+        board_size = 19
+
+        # Convert with FP16 I/O
+        output = temp_output_dir / "cpp_fp16_io_dtypes.mlpackage"
+
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=True,
+        )
+
+        # Load model and check types
+        import coremltools as ct
+        model = ct.models.MLModel(str(output))
+        spec = model.get_spec()
+
+        # Check all inputs are FLOAT16 (65552)
+        FLOAT16 = 65552
+        for inp in spec.description.input:
+            if inp.type.WhichOneof('Type') == 'multiArrayType':
+                datatype = inp.type.multiArrayType.dataType
+                assert datatype == FLOAT16, (
+                    f"Input '{inp.name}' should be FLOAT16 (65552), got {datatype}"
+                )
+
+        # Check all outputs are FLOAT16
+        for out in spec.description.output:
+            if out.type.WhichOneof('Type') == 'multiArrayType':
+                datatype = out.type.multiArrayType.dataType
+                assert datatype == FLOAT16, (
+                    f"Output '{out.name}' should be FLOAT16 (65552), got {datatype}"
+                )
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "g170-b6c96-s175395328-d26788732.bin.gz",
+        ],
+    )
+    def test_fp16_io_inference(
+        self,
+        model_name: str,
+        katago2coreml_exe: Path,
+        all_test_models: dict,
+        temp_output_dir: Path,
+    ):
+        """Test inference with FP16 inputs produces FP16 outputs.
+
+        Args:
+            model_name: Name of the KataGo model file
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            all_test_models: Dict mapping model names to paths (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        import numpy as np
+
+        # Skip if model not available
+        if model_name not in all_test_models:
+            pytest.skip(f"Model not available: {model_name}")
+
+        model_path = all_test_models[model_name]
+        board_size = 19
+
+        # Convert with FP16 I/O
+        output = temp_output_dir / "cpp_fp16_io_inference.mlpackage"
+
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=True,
+        )
+
+        # Load model
+        import coremltools as ct
+        model = ct.models.MLModel(str(output))
+
+        # Create FP16 inputs
+        np.random.seed(RANDOM_SEED_BASE)
+        spatial_input = np.random.randn(1, 22, board_size, board_size).astype(np.float16)
+        global_input = np.random.randn(1, 19).astype(np.float16)
+        input_mask = np.ones((1, 1, board_size, board_size), dtype=np.float16)
+
+        inputs = {
+            "spatial_input": spatial_input,
+            "global_input": global_input,
+            "input_mask": input_mask,
+        }
+
+        # Run inference
+        outputs = model.predict(inputs)
+
+        # Note: Core ML runtime may convert FP16 outputs to FP32 for Python API
+        # The important part is that the model spec has FP16 outputs (verified in another test)
+        # Runtime conversion doesn't affect on-device performance benefits
+
+        # Verify output values are in reasonable range (no NaN/Inf)
+        for name, value in outputs.items():
+            assert not np.isnan(value).any(), f"Output '{name}' contains NaN values"
+            assert not np.isinf(value).any(), f"Output '{name}' contains Inf values"
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "g170-b6c96-s175395328-d26788732.bin.gz",
+        ],
+    )
+    @pytest.mark.parametrize("board_size", [9, 19])
+    @pytest.mark.parametrize("batch_config", [(1, 1), (1, 4)])
+    def test_fp16_io_with_dynamic_batch(
+        self,
+        model_name: str,
+        board_size: int,
+        batch_config: tuple,
+        katago2coreml_exe: Path,
+        all_test_models: dict,
+        temp_output_dir: Path,
+    ):
+        """Test FP16 I/O works with dynamic batch sizes.
+
+        Args:
+            model_name: Name of the KataGo model file
+            board_size: Board size (9 or 19)
+            batch_config: Tuple of (min_batch, max_batch)
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            all_test_models: Dict mapping model names to paths (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        import numpy as np
+
+        # Skip if model not available
+        if model_name not in all_test_models:
+            pytest.skip(f"Model not available: {model_name}")
+
+        model_path = all_test_models[model_name]
+        min_batch, max_batch = batch_config
+
+        # Convert with FP16 I/O and dynamic batch
+        output = temp_output_dir / f"cpp_fp16_io_batch_{min_batch}_{max_batch}_{board_size}x{board_size}.mlpackage"
+
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=True,
+            min_batch_size=min_batch,
+            max_batch_size=max_batch,
+        )
+
+        # Load model
+        import coremltools as ct
+        model = ct.models.MLModel(str(output))
+
+        # Test with different batch sizes
+        for batch in [1, 2]:
+            if batch > max_batch and max_batch > 0:
+                continue
+
+            # Create FP16 inputs with batch size
+            np.random.seed(RANDOM_SEED_BASE + batch)
+            spatial_input = np.random.randn(batch, 22, board_size, board_size).astype(np.float16)
+            global_input = np.random.randn(batch, 19).astype(np.float16)
+            input_mask = np.ones((batch, 1, board_size, board_size), dtype=np.float16)
+
+            inputs = {
+                "spatial_input": spatial_input,
+                "global_input": global_input,
+                "input_mask": input_mask,
+            }
+
+            # Run inference
+            outputs = model.predict(inputs)
+
+            # Note: Core ML runtime may convert FP16 outputs to FP32 for Python API
+            # Verify batch dimension matches
+            for name, value in outputs.items():
+                assert value.shape[0] == batch, (
+                    f"Output '{name}' batch dimension mismatch: expected {batch}, got {value.shape[0]}"
+                )
+
+            # Verify outputs are valid (no NaN/Inf)
+            for name, value in outputs.items():
+                assert not np.isnan(value).any(), f"Output '{name}' contains NaN values"
+                assert not np.isinf(value).any(), f"Output '{name}' contains Inf values"

@@ -28,6 +28,36 @@ cd build && ctest --output-on-failure
 rm -rf CMakeCache.txt CMakeFiles _deps && cmake .. && make
 ```
 
+## FLOAT16 Precision Modes
+
+The converter supports three precision modes:
+
+1. **FLOAT32 (default)**: FP32 everywhere
+   - Inputs/outputs: FLOAT32
+   - Internal computation: FLOAT32
+   - Specification version: 6 (iOS 15+)
+
+2. **Mixed Precision** (`--float16`): FP16 internal compute with FP32 I/O
+   - Inputs/outputs: FLOAT32
+   - Internal computation: FLOAT16
+   - Cast operations inserted at boundaries (lines 122-144, 164-195 in MILBuilder.cpp)
+   - Weight storage: FP16 (~50% size reduction)
+   - Specification version: 6 (iOS 15+)
+
+3. **Pure FP16** (`--float16 --float16-io`): FP16 everywhere
+   - Inputs/outputs: FLOAT16
+   - Internal computation: FLOAT16
+   - No cast operations at boundaries
+   - Weight storage: FP16 (~50% size reduction)
+   - Specification version: 7 (iOS 16+, auto-upgraded)
+   - Output naming: Uses base names (e.g., `policy_p2_conv`) without `_fp16` suffix
+
+**Implementation Details**:
+- Input tensor data types set in MILBuilder.cpp:68,81,92,107
+- Output naming logic in buildPolicyHead/buildValueHead (lines 1986,2009,2013,2055,2059,2063)
+- Model description data types in CoreMLSerializer.cpp:93-153
+- Validation in Converter.cpp:39-41 (requires FP16 compute when using FP16 I/O)
+
 ## Architecture
 
 The converter follows a three-stage pipeline:

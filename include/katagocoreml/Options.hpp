@@ -22,6 +22,13 @@ struct ConversionOptions {
     /// Compute precision: "FLOAT32" or "FLOAT16"
     std::string compute_precision = "FLOAT32";
 
+    /// Use FLOAT16 for model inputs/outputs (instead of FLOAT32)
+    /// Only effective when compute_precision="FLOAT16"
+    /// When true with compute_precision="FLOAT16", creates pure FP16 model
+    /// When false (default), uses FP32 I/O with FP16 internal computation
+    /// Has no effect when compute_precision="FLOAT32"
+    bool use_fp16_io = false;
+
     /// Core ML specification version (default: 6 for iOS 15+)
     int specification_version = 6;
 
