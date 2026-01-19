@@ -41,6 +41,12 @@ struct ConversionOptions {
     /// Number of metadata input channels (192 for human SL networks)
     int num_input_meta_channels = 0;
 
+    /// Number of spatial input channels (set internally, typically 22)
+    int num_input_channels = 0;
+
+    /// Number of global input channels (set internally, typically 19)
+    int num_input_global_channels = 0;
+
     /// Minimum batch size for inference (must be >= 1)
     /// Default: 1 (single sample inference)
     int min_batch_size = 1;

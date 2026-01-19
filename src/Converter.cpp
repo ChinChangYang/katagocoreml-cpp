@@ -61,6 +61,8 @@ void KataGoConverter::convert(const std::string& input_path,
     final_options.model_version = model.model_version;
     final_options.meta_encoder_version = model.meta_encoder_version;
     final_options.num_input_meta_channels = model.num_input_meta_channels;
+    final_options.num_input_channels = model.num_input_channels;
+    final_options.num_input_global_channels = model.num_input_global_channels;
 
     // Add model architecture info for metadata
     final_options.num_blocks = model.trunk.num_blocks;
