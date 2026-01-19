@@ -1004,3 +1004,119 @@ class TestCppFP16IO:
             for name, value in outputs.items():
                 assert not np.isnan(value).any(), f"Output '{name}' contains NaN values"
                 assert not np.isinf(value).any(), f"Output '{name}' contains Inf values"
+
+
+class TestCppMixedVsPureFP16:
+    """Self-validation tests comparing mixed precision and pure FP16 I/O modes.
+
+    Since the Python coremltools KataGo converter does not support float16_io mode,
+    cross-validation against Python is not possible. Instead, these tests validate
+    that the pure FP16 I/O mode produces inference results equivalent to the
+    mixed precision mode (which has been validated against Python).
+
+    Both modes produce outputs with the same names (e.g., policy_p2_conv, value_v3_bias),
+    allowing direct comparison without name mapping.
+    """
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "g170-b6c96-s175395328-d26788732.bin.gz",       # Smaller model
+            "b5c192nbt-distilled.bin.gz",                   # Distilled model (human SL with metadata)
+        ],
+    )
+    @pytest.mark.parametrize("board_size", [9, 19])
+    def test_mixed_vs_pure_fp16_inference(
+        self,
+        model_name: str,
+        board_size: int,
+        katago2coreml_exe: Path,
+        all_test_models: dict,
+        temp_output_dir: Path,
+    ):
+        """Test that pure FP16 I/O and mixed precision produce equivalent inference results.
+
+        This test validates that the pure FP16 I/O mode produces results equivalent to
+        the mixed precision mode (which has already been validated against Python).
+
+        Args:
+            model_name: Name of the KataGo model file
+            board_size: Board size (9 or 19)
+            katago2coreml_exe: Path to C++ CLI tool (fixture)
+            all_test_models: Dict mapping model names to paths (fixture)
+            temp_output_dir: Temporary directory for outputs (fixture)
+        """
+        import platform
+        if platform.machine() != "arm64":
+            pytest.skip("Core ML inference only available on Apple Silicon")
+
+        import numpy as np
+
+        # Skip if model not available
+        if model_name not in all_test_models:
+            pytest.skip(f"Model not available: {model_name}")
+
+        model_path = all_test_models[model_name]
+
+        # Convert with mixed precision (float16=True, float16_io=False)
+        mixed_output = temp_output_dir / f"mixed_fp16_{board_size}x{board_size}.mlpackage"
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            mixed_output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=False,
+        )
+
+        # Convert with pure FP16 I/O (float16=True, float16_io=True)
+        pure_output = temp_output_dir / f"pure_fp16_io_{board_size}x{board_size}.mlpackage"
+        convert_with_cpp(
+            katago2coreml_exe,
+            model_path,
+            pure_output,
+            board_size,
+            optimize_mask=False,
+            float16=True,
+            float16_io=True,
+        )
+
+        # Load models
+        import coremltools as ct
+        mixed_model = ct.models.MLModel(str(mixed_output))
+        pure_model = ct.models.MLModel(str(pure_output))
+
+        # Check for meta_input
+        mixed_spec = mixed_model.get_spec()
+        has_meta_input = "meta_input" in [inp.name for inp in mixed_spec.description.input]
+
+        # Generate FP32 inputs (CoreML auto-converts for FP16 I/O model)
+        inputs = create_batched_inputs(1, board_size, has_meta_input)
+
+        # Run inference on both models
+        mixed_outputs = mixed_model.predict(inputs)
+        pure_outputs = pure_model.predict(inputs)
+
+        # Compare outputs using relative tolerance (rtol) and absolute tolerance (atol)
+        # FP16 has ~3 decimal digits of precision, so 1% relative tolerance is appropriate
+        rtol, atol = 1e-2, 1e-2
+        failed_outputs = []
+
+        for name in pure_outputs.keys():
+            if name not in mixed_outputs:
+                failed_outputs.append(f"Missing output key in mixed model: {name}")
+                continue
+
+            pure_val = pure_outputs[name]
+            mixed_val = mixed_outputs[name]
+
+            if not np.allclose(pure_val, mixed_val, rtol=rtol, atol=atol):
+                max_diff = np.max(np.abs(pure_val - mixed_val))
+                failed_outputs.append(
+                    f"Output '{name}' not close: max_diff={max_diff:.6f}, "
+                    f"rtol={rtol}, atol={atol}"
+                )
+
+        if failed_outputs:
+            pytest.fail("\n".join(failed_outputs))
