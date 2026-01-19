@@ -1981,8 +1981,8 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
     std::string p1_activated = genVarName("policy_p1_act");
     addBatchNormActivationOps(block, p1_biased, ph.p1_bn, ph.p1_activation, mask, p1_activated);
 
-    // P2 conv -> policy output (match Python name)
-    // Use _fp16 suffix only for mixed precision (FP16 compute with FP32 I/O)
+    // P2 conv -> policy output
+    // Mixed precision uses _fp16 suffix for this intermediate op; cast ops later rename to base name
     policy_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_p2_conv_fp16" : "policy_p2_conv";
     addConvOp(block, p1_activated, ph.p2_conv, policy_out);
 
@@ -2006,11 +2006,13 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
             pass_activated = pass_biased;
         }
 
-        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";  // Match Python naming
+        // Mixed precision: _fp16 intermediate, cast ops rename to base name
+        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";
         addMatMulOp(block, pass_activated, *ph.gpool_to_pass_mul2, pass_out);
     } else {
         // Pre-v15: single layer pass
-        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";  // pre-v15 name
+        // Mixed precision: _fp16 intermediate, cast ops rename to base name (pre-v15)
+        pass_out = (m_use_fp16 && !m_use_fp16_io) ? "policy_pass_fp16" : "policy_pass";
         addMatMulOp(block, g1_pooled, ph.gpool_to_pass_mul, pass_out);
     }
 }
@@ -2051,15 +2053,18 @@ void MILBuilder::buildValueHead(CoreML::Specification::MILSpec::Block* block,
         v2 = v2_bias;
     }
 
-    // V3: linear -> value output (fused matmul+bias -> linear) (match Python name)
+    // V3: linear -> value output (fused matmul+bias -> linear)
+    // Mixed precision: _fp16 intermediate, cast ops rename to base name
     value_out = (m_use_fp16 && !m_use_fp16_io) ? "value_v3_bias_fp16" : "value_v3_bias";
     addLinearOp(block, v2, vh.v3_mul, vh.v3_bias, value_out);
 
-    // SV3: linear -> score value output (fused matmul+bias -> linear) (match Python name)
+    // SV3: linear -> score value output (fused matmul+bias -> linear)
+    // Mixed precision: _fp16 intermediate, cast ops rename to base name
     score_value_out = (m_use_fp16 && !m_use_fp16_io) ? "value_sv3_bias_fp16" : "value_sv3_bias";
     addLinearOp(block, v2, vh.sv3_mul, vh.sv3_bias, score_value_out);
 
-    // Ownership conv (match Python name)
+    // Ownership conv
+    // Mixed precision: _fp16 intermediate, cast ops rename to base name
     ownership_out = (m_use_fp16 && !m_use_fp16_io) ? "value_ownership_conv_fp16" : "value_ownership_conv";
     addConvOp(block, v1, vh.v_ownership_conv, ownership_out);
 }
