@@ -1098,9 +1098,9 @@ class TestCppMixedVsPureFP16:
         mixed_outputs = mixed_model.predict(inputs)
         pure_outputs = pure_model.predict(inputs)
 
-        # Compare outputs directly (both modes use the same output names)
-        # FP16 has lower precision, so numerical differences up to ~0.5 are acceptable
-        tolerance = 0.5
+        # Compare outputs using relative tolerance (rtol) and absolute tolerance (atol)
+        # FP16 has ~3 decimal digits of precision, so 1% relative tolerance is appropriate
+        rtol, atol = 1e-2, 1e-2
         failed_outputs = []
 
         for name in pure_outputs.keys():
@@ -1111,11 +1111,11 @@ class TestCppMixedVsPureFP16:
             pure_val = pure_outputs[name]
             mixed_val = mixed_outputs[name]
 
-            max_diff = np.max(np.abs(pure_val - mixed_val))
-            if max_diff > tolerance:
+            if not np.allclose(pure_val, mixed_val, rtol=rtol, atol=atol):
+                max_diff = np.max(np.abs(pure_val - mixed_val))
                 failed_outputs.append(
-                    f"Output '{name}' differs by max {max_diff:.6f} "
-                    f"(tolerance: {tolerance})"
+                    f"Output '{name}' not close: max_diff={max_diff:.6f}, "
+                    f"rtol={rtol}, atol={atol}"
                 )
 
         if failed_outputs:
